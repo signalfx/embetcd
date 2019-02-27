@@ -5,18 +5,13 @@ executors:
   goexecutor:
     working_directory: /usr/local/go/src/github.com/signalfx/embedded-etcd
     docker:
-      - image: golang:1.12-alpine
-        environment:
-          CGO_ENABLED: 0
+      - image: golang:1.12
 
 jobs:
 
   cache_gobuild: # check out code and install dependencies for downstream jobs
     executor: goexecutor
     steps:
-      - run:
-          name: "install git"
-          command: apk add --no-cache git
       - run:
           name: "go get golang.org/x/lint/golint"
           command: go get -u golang.org/x/lint/golint
@@ -32,7 +27,6 @@ jobs:
       - run:
           name: "install gobuild"
           command: gobuild -verbose install
-      - checkout
       - save_cache:
           key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
           paths:
@@ -44,6 +38,7 @@ jobs:
     steps:
       - restore_cache:
           key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
+      - checkout
       - run:
           name: "gobuild build"
           command: gobuild build
@@ -53,6 +48,7 @@ jobs:
     steps:
       - restore_cache:
           key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
+      - checkout
       - run:
           name: "gobuild lint"
           command: gobuild lint
@@ -65,9 +61,7 @@ jobs:
     steps:
       - restore_cache:
           key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
-      - run:
-          name: "install git"
-          command: apk add --no-cache git
+      - checkout
       - run:
           name: "gobuild test"
           command: gobuild test
