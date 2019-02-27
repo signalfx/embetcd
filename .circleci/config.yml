@@ -1,0 +1,87 @@
+---
+version: 2.1
+executors:
+
+  goexecutor:
+    working_directory: /usr/local/go/src/github.com/signalfx/embedded-etcd
+    docker:
+      - image: golang:1.12-alpine
+        environment:
+          CGO_ENABLED: 0
+
+jobs:
+
+  cache_gobuild: # check out code and install dependencies for downstream jobs
+    executor: goexecutor
+    steps:
+      - run:
+          name: "install git"
+          command: apk add --no-cache git
+      - run:
+          name: "go get golang.org/x/lint/golint"
+          command: go get -u golang.org/x/lint/golint
+      - run:
+          name: "go get github.com/alecthomas/gometalinter"
+          command: go get -u github.com/alecthomas/gometalinter
+      - run:
+          name: "install gometalinter linters"
+          command: gometalinter --install --update
+      - run:
+          name: "go get gobuild"
+          command: go get -u github.com/signalfx/gobuild
+      - run:
+          name: "install gobuild"
+          command: gobuild -verbose install
+      - checkout
+      - save_cache:
+          key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
+          paths:
+            - /go
+            - /usr/local/go
+
+  build:
+    executor: goexecutor
+    steps:
+      - restore_cache:
+          key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: "gobuild build"
+          command: gobuild build
+
+  lint:
+    executor: goexecutor
+    steps:
+      - restore_cache:
+          key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: "gobuild lint"
+          command: gobuild lint
+      - run:
+          name: "gobuild dupl"
+          command: gobuild dupl
+
+  test:
+    executor: goexecutor
+    steps:
+      - restore_cache:
+          key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
+      - run:
+          name: "install git"
+          command: apk add --no-cache git
+      - run:
+          name: "gobuild test"
+          command: gobuild test
+
+workflows:
+  build_test:
+    jobs:
+      - cache_gobuild
+      - build:
+          requires:
+            - cache_gobuild
+      - lint:
+          requires:
+            - cache_gobuild
+      - test:
+          requires:
+            - cache_gobuild
