@@ -1,2 +1,2 @@
-# embeded-etcd-cluster
-Utilities for embedding etcd into projects
+# embedded-etcd-cluster
+Utilities for embedding etcd into go projects
