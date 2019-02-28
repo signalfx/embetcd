@@ -191,14 +191,15 @@ func TestMemberCleanup(t *testing.T) {
 					return
 				}
 
+				// log the member list for reference in test output
+				t.Log("member list:")
+				for _, member := range members.Members {
+					t.Log(member)
+				}
+
 				// verify the member list is as long as we expect
 				if len(members.Members) != len(servers) {
 					t.Errorf("etcd member list length (%d) does not match expected length (%d)", len(members.Members), len(servers))
-					// log the member list for reference in test output
-					t.Log("member list:")
-					for _, member := range members.Members {
-						t.Log(member.GetName())
-					}
 					return
 				}
 			}
@@ -538,22 +539,19 @@ func TestNew(t *testing.T) {
 					return
 				}
 
-				// verify the member list is as long as we expect
-				if len(members.Members) != len(servers) {
-					t.Errorf("etcd member list length (%d) does not match expected length (%d)", len(members.Members), len(servers))
-					// log the member list for reference in test output
-					t.Log("member list:")
-					for _, member := range members.Members {
-						t.Log(member.GetName())
-					}
-					return
-				}
-
 				// log the member list for reference in test output
 				t.Log("member list:")
 				for _, member := range members.Members {
 					t.Log(member)
 				}
+
+				// verify the member list is as long as we expect
+				if len(members.Members) != len(servers) {
+					t.Errorf("etcd member list length (%d) does not match expected length (%d)", len(members.Members), len(servers))
+					return
+				}
+
+
 			}
 		})
 
