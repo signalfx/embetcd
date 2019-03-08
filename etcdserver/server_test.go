@@ -3,6 +3,7 @@ package etcdserver
 import (
 	"context"
 	"fmt"
+	cli "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/signalfx/embedded-etcd/etcderrors"
@@ -281,10 +282,6 @@ func TestMemberHaltsAndIsReAdded(t *testing.T) {
 			defer cancel()
 			for timeout.Err() == nil {
 				members := servers[0].Server.Cluster().Members()
-				fmt.Println(members)
-				for _, member := range members {
-					fmt.Println(member)
-				}
 				if len(members) == len(servers) {
 					for _, member := range members {
 						t.Log(member)
@@ -595,7 +592,57 @@ func TestNew(t *testing.T) {
 						}),
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 20),
+			stopTimeout: pointer.Duration(time.Second * 30),
+		},
+		{
+			// ports 34XX, 34XX intentional conflict
+			name: "etcd servers should fail and return an error if their configured port is blocked",
+			args: []arg{
+				{
+					etcdCfg: testNewConfigWithDefaults(
+						&Config{
+							Config: &embed.Config{
+								Name:              "test-server-1",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3480"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3480"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3470"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3470"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3481"}},
+								ClusterState:      embed.ClusterStateFlagNew,
+							},
+							InitialCluster: []string{"http://127.0.0.1:3470", "http://127.0.0.1:3470"},
+						}),
+				},
+				{
+					etcdCfg: testNewConfigWithDefaults(
+						&Config{
+							Config: &embed.Config{
+								Name:              "test-server-2",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3480"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3480"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3470"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3470"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3491"}},
+								ClusterState:      embed.ClusterStateFlagExisting,
+							},
+							InitialCluster: []string{"http://127.0.0.1:3470", "http://127.0.0.1:3470"},
+						}),
+					// set a short timeout since this is an error case
+					startTimeout:   pointer.Duration(time.Second * 30),
+					wantStartErr:   true,
+				},
+			},
+			stopTimeout: pointer.Duration(time.Second * 1),
 		},
 	}
 	for _, tt := range tests {
@@ -622,6 +669,7 @@ func TestNew(t *testing.T) {
 					t.Errorf("New() expected error while starting up server %v but didn't get error = %v, wantErr %v", server, err, a.wantStartErr)
 					return
 				}
+				t.Log(err)
 			}
 
 			t.Log("Ensuring each member is up and aware of each other..")
@@ -642,133 +690,145 @@ func TestNew(t *testing.T) {
 
 				// shutdown
 				if err := server.Shutdown(ctx); err != nil && err != etcdserver.ErrNotEnoughStartedMembers && err != rpctypes.ErrMemberNotEnoughStarted && err != rpctypes.ErrGRPCMemberNotEnoughStarted {
-					t.Errorf("error while closing etccd client for server '%s' %v", server.Config().Name, err)
+					t.Errorf("error while closing etccd server '%s' %v", server.Config().Name, err)
+				} else {
+					t.Logf("The returned error when shutting down was: %v", err)
 				}
 
 				// cover IsRunning()
 				if server.IsRunning() {
-					t.Errorf("server %v did not shutdown properly", server)
+					t.Errorf("server %s, %v did not shutdown properly", server.Config().Name, server.Server.ID())
 				}
 
 				// cover ErrAlreadyStopped error
 				if err := server.Shutdown(ctx); err != etcderrors.ErrAlreadyStopped {
 					t.Errorf("Already stopped server did not return ErrAlreadyStopped when stop was called: %v", server)
 				}
+
 				cancel()
 			}
 		})
 	}
 }
-//
-//func TestServer_waitForShutdown(t *testing.T) {
-//	closedDone := make(chan struct{})
-//	close(closedDone)
-//	expiredContext, _ := context.WithTimeout(context.Background(), 0)
-//	canceledContext, cancel := context.WithCancel(context.Background())
-//	cancel()
-//
-//	etcdDir, err := ioutil.TempDir("", "TestEtcdServer")
-//	if err != nil {
-//		t.Errorf("failed to create temporary data dir for etcd server %v", err)
-//	}
-//
-//	type args struct {
-//		done chan struct{}
-//		ctx  context.Context
-//	}
-//	tests := []struct {
-//		name    string
-//		args    args
-//		wantErr bool
-//	}{
-//		{
-//			name: "test done channel closed",
-//			args: args{
-//				done: closedDone,
-//				ctx:  context.Background(),
-//			},
-//		},
-//		{
-//			name: "test ctx.Done() with expired context",
-//			args: args{
-//				done: make(chan struct{}),
-//				ctx:  expiredContext,
-//			},
-//		},
-//		{
-//			name: "test ctx.Done() with canceled context",
-//			args: args{
-//				done: make(chan struct{}),
-//				ctx:  canceledContext,
-//			},
-//		},
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			s := New()
-//			timeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
-//
-//			config := embed.NewConfig()
-//			config.Dir = etcdDir
-//
-//			if err := s.Start(timeout, config, config.InitialClusterToken, []string{}, nil, nil); err != nil {
-//				t.Errorf("Server.waitForShutdown() failed to set up the server for test %v", err)
-//			}
-//			cancel()
-//
-//			if err := s.waitForShutdown(tt.args.done, tt.args.ctx); (err != nil) != tt.wantErr {
-//				t.Errorf("Server.waitForShutdown() error = %v, wantErr %v", err, tt.wantErr)
-//			}
-//			// clean up tests
-//			s.Close()
-//		})
-//	}
-//}
-//
-//func TestServer_errorHandlerRoutine(t *testing.T) {
-//	closedStructCh := make(chan struct{})
-//	close(closedStructCh)
-//	closedErrCh := make(chan error)
-//	close(closedErrCh)
-//
-//	etcdDir, err := ioutil.TempDir("", "TestEtcdServer")
-//	if err != nil {
-//		t.Errorf("failed to create temporary data dir for etcd server %v", err)
-//	}
-//
-//	type args struct {
-//		stopCh <-chan struct{}
-//		errCh  <-chan error
-//	}
-//	tests := []struct {
-//		name string
-//		args args
-//	}{
-//		{
-//			// by testing the error channel case we actually get coverage of the stop ch too
-//			name: "err channel returns value",
-//			args: args{
-//				stopCh: make(chan struct{}),
-//				errCh:  closedErrCh,
-//			},
-//		},
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			s := New()
-//			timeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
-//
-//			config := embed.NewConfig()
-//			config.Dir = etcdDir
-//
-//			if err := s.Start(timeout, config, config.InitialClusterToken, []string{}, nil, nil); err != nil {
-//				t.Errorf("Server.errorHandlerRoutine() failed to set up the server for test %v", err)
-//			}
-//			cancel()
-//			s.errorHandlerRoutine(tt.args.stopCh, tt.args.errCh)
-//			if s.IsRunning() {
-//				t.Errorf("Server.errorHandlerRoutine() did not shutdownt he server")
-//			}
-//		})
-//	}
-//}
+
+func TestServer_waitForShutdown(t *testing.T) {
+	closedDone := make(chan struct{})
+	close(closedDone)
+	expiredContext, _ := context.WithTimeout(context.Background(), 0)
+	canceledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	etcdDir, err := ioutil.TempDir("", "TestEtcdServer")
+	if err != nil {
+		t.Errorf("failed to create temporary data dir for etcd server %v", err)
+	}
+
+	type args struct {
+		done chan struct{}
+		ctx  context.Context
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{
+			name: "test done channel closed",
+			args: args{
+				done: closedDone,
+				ctx:  context.Background(),
+			},
+		},
+		{
+			name: "test ctx.Done() with expired context",
+			args: args{
+				done: make(chan struct{}),
+				ctx:  expiredContext,
+			},
+		},
+		{
+			name: "test ctx.Done() with canceled context",
+			args: args{
+				done: make(chan struct{}),
+				ctx:  canceledContext,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New()
+			timeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
+
+			config := NewConfig()
+			config.Dir = etcdDir
+
+			if err := s.Start(timeout, config); err != nil {
+				t.Errorf("Server.waitForShutdown() failed to set up the server for test %v", err)
+			}
+			cancel()
+
+			if err := s.waitForShutdown(tt.args.done, tt.args.ctx); (err != nil) != tt.wantErr {
+				t.Errorf("Server.waitForShutdown() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			// clean up tests
+			s.Close()
+		})
+	}
+}
+
+
+func TestServer_errorHandlerRoutine(t *testing.T) {
+	closedStructCh := make(chan struct{})
+	close(closedStructCh)
+	closedErrCh := make(chan error)
+	close(closedErrCh)
+
+	etcdDir, err := ioutil.TempDir("", "TestEtcdServer")
+	if err != nil {
+		t.Errorf("failed to create temporary data dir for etcd server %v", err)
+	}
+
+	type args struct {
+		stopCh <-chan struct{}
+		errCh  <-chan error
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			// by testing the error channel case we actually get coverage of the stop ch too
+			name: "err channel returns value",
+			args: args{
+				stopCh: make(chan struct{}),
+				errCh:  closedErrCh,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := New()
+			// timeout, cancel := context.WithTimeout(context.Background(), time.Second*5)
+
+			config := NewConfig()
+			config.Dir = etcdDir
+
+			// add to the server wait group to avoid a negative waitgroup
+			s.routineContext, s.routineCancel = context.WithCancel(context.Background())
+			s.routineWg.Add(1)
+
+			s.errorHandlerRoutine(s.routineContext, tt.args.stopCh, tt.args.errCh)
+			if s.IsRunning() {
+				t.Errorf("Server.errorHandlerRoutine() did not shutdownt he server")
+			}
+		})
+	}
+}
+
+func TestConfig_GetClientFromConfig(t *testing.T) {
+	cfg := Config{InitialCluster: []string{}}
+	_, err := cfg.GetClientFromConfig(nil)
+	if err != cli.ErrNoAvailableEndpoints {
+		t.Errorf("Config.GetClientFromConfig() want = (%v) got = (%v)", cli.ErrNoAvailableEndpoints, err)
+	}
+}

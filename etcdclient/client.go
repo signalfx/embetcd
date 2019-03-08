@@ -2,7 +2,6 @@ package etcdclient
 
 import (
 	"context"
-	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"path"
 	"time"
 
@@ -46,6 +45,28 @@ func (c *Client) UpdateEndpointsRoutine(interval *time.Duration) {
 			}
 		}
 	}
+}
+
+// PutWithKeepAlive puts a key and value with a keep alive returns
+// a lease, the keep alive response channel, and an err if one occurrs
+func (c *Client) PutWithKeepAlive(ctx context.Context, key string, value string, ttl int64) (lease *cli.LeaseGrantResponse, keepAlive <-chan *cli.LeaseKeepAliveResponse, err error){
+	// create a lease for the member key
+	if err == nil {
+		// create a new lease with a 5 second ttl
+		lease, err = c.Grant(context.Background(), ttl)
+	}
+
+	// keep the lease alive if we successfully put the key in
+	if err == nil {
+		keepAlive, err = c.KeepAlive(context.Background(), lease.ID)
+	}
+
+	// put in a key for the server
+	if err == nil {
+		_, err = c.Put(ctx, key, value, cli.WithLease(lease.ID))
+	}
+
+	return lease, keepAlive, err
 }
 
 // Lock accepts an etcd client, context (with cancel), and name and creates a concurrent lock
@@ -98,25 +119,3 @@ func New(cfg cli.Config) (client *Client, err error) {
 
 	return client, err
 }
-
-// CheckMemberHealth checks whether an etcd member is healthy or not using it's client urls.
-// The context that is passed in should have a configured timeout.
-// This is modeled after etcdctl's method of checking endpoint health
-// https://github.com/etcd-io/etcd/blob/v3.3.0/etcdctl/ctlv3/command/ep_command.go#L80
-func CheckMemberHealth(ctx context.Context, clientURLs []string) bool {
-	if client, err := New(cli.Config{Endpoints: clientURLs, Context: ctx}); err == nil {
-		defer client.Close()
-		if ctx.Err() == nil {
-			// the health key doesn't exist by default and it doesn't actually matter if it does
-			// We just want a response without error and rpc permission denied errors are OK.
-			// The response could be an error, it just doesn't matter.  If the endpoint/server is down,
-			// the client will return an error.
-			if _, err := client.Get(ctx, "health"); ctx.Err() == nil && (err == nil || err == rpctypes.ErrPermissionDenied) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/signalfx/golib/pointer"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -94,5 +95,12 @@ func Test_duration(t *testing.T) {
 				t.Errorf("duration() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func Test_URLToSTringSlice(t *testing.T) {
+	urls := URLSToStringSlice([]url.URL{{Scheme: "http", Host: "test1:8080"}})
+	if len(urls) < 1 || urls[0] != "http://test1:8080" {
+		t.Errorf("expected 'http://test1:8080', but got %v", urls)
 	}
 }

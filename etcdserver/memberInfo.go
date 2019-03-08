@@ -100,8 +100,13 @@ func (m *Members) Remove(id uint64) {
 // Clean up members in the list that exceeded their ttl and their startup graceperiod
 // Etcd is allergic to adding and removing multiple instances at the same time.
 // This should be serial and not concurrent
-func (m *Members) Clean(ttl *time.Duration, graceperiod *time.Duration, memberRemoveTimeout *time.Duration, ctx context.Context){
+func (m *Members) Clean(ttl *time.Duration, graceperiod *time.Duration, memberRemoveTimeout *time.Duration, currentMemberIDs map[uint64]struct{}, ctx context.Context){
 	for id, member := range m.members {
+		// If the id isn't in the current member list remove it because its stale.
+		// The member either removed itself from the cluster or was removed by another member.
+		if _, ok := currentMemberIDs[id]; !ok {
+			delete(m.members, id)
+		}
 		if time.Since(member.Discovered) > common.DurationOrDefault(graceperiod, DefaultStartUpGracePeriod) && time.Since(member.LastHealth) > common.DurationOrDefault(ttl, DefaultUnhealthyTTL) {
 			fmt.Println("REMOVING MEMBER ", member.Name, member.ID)
 			if m.Client != nil {
