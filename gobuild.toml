@@ -1,0 +1,26 @@
+[vars]
+  ignoreDirs = [".git", "vendor", ".circleci"]
+  duplLimit = "300"
+  testCoverage = 100.0
+  testFlags = ["-covermode", "atomic", "-race", "-timeout", "300s", "-cpu", "4", "-parallel", "8"]
+
+[metalinter]
+  [metalinter.vars]
+    args = ["--disable-all", "--vendor", "--concurrency=12", "--min-confidence=.3", "--deadline=300s", "--exclude=.*_test.go"]
+  [metalinter.ignored]
+    coverageignored = "ignored is unused"
+    errcheck = "error return value not checked"
+    gosec = "Errors unhandled.,LOW,HIGH"
+    insecureignored = "TLS InsecureSkipVerify set true"
+  [metalinter.enabled]
+    golint = true
+    gofmt = true
+    varcheck = true
+    maligned = true
+    gocyclo = true
+    vet = true
+    deadcode = true
+    unconvert = true
+    structcheck = true
+    ineffassign = true
+    errcheck = true
