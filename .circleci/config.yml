@@ -51,10 +51,14 @@ jobs:
       - checkout
       - run:
           name: "gobuild lint"
-          command: GO11MODULE=off gobuild lint
+          command: |
+            export GO111MODULE=off
+            gobuild lint
       - run:
           name: "gobuild dupl"
-          command: GO11MODULE=off gobuild dupl
+          command: |
+            export GO111MODULE=off
+            gobuild dupl
 
   test:
     executor: goexecutor
