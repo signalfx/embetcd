@@ -45,6 +45,8 @@ jobs:
 
   lint:
     executor: goexecutor
+    environment:
+      GO11MODULE: off
     steps:
       - restore_cache:
           key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
