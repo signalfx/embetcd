@@ -1,8 +1,7 @@
-package embeddedEtcd
+package embetcd
 
 import (
 	"context"
-	"fmt"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/etcdserver/membership"

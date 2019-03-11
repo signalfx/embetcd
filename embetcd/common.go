@@ -1,4 +1,4 @@
-package embeddedEtcd
+package embetcd
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package embeddedEtcd
+package embetcd
 
 import (
 	"context"
@@ -531,7 +531,6 @@ func TestNew(t *testing.T) {
 	}
 }
 
-
 func TestMemberHaltsAndIsReAdded(t *testing.T) {
 	type arg struct {
 		etcdCfg          *Config
@@ -713,7 +712,7 @@ func TestMemberHaltsAndIsReAdded(t *testing.T) {
 	}
 }
 
-func TestServer_cleanUpStart(t *testing.T){
+func TestServer_cleanUpStart(t *testing.T) {
 	type arg struct {
 		etcdCfg          *Config
 		AutoSyncInterval time.Duration

@@ -1,4 +1,4 @@
-package embeddedEtcd
+package embetcd
 
 import (
 	"context"
@@ -72,7 +72,7 @@ func (c *Client) Lock(ctx context.Context, name string) (unlock func(context.Con
 	return unlock, err
 }
 
-// New returns a new etcd v3client wrapped with some helper functions
+// NewClient returns a new etcd v3client wrapped with some helper functions
 func NewClient(cfg cli.Config) (client *Client, err error) {
 	var etcdClient *cli.Client
 

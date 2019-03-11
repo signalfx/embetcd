@@ -1,4 +1,4 @@
-package embeddedEtcd
+package embetcd
 
 import (
 	"context"
@@ -306,8 +306,8 @@ func (s *Server) Start(ctx context.Context, cfg *Config) (err error) {
 
 // cleanupStart is a dedicated function for cleaning up failed start ups
 // This is a dedicated function for test coverage purposes.
-func (s *Server) cleanUpStart(err error){
-	if err != nil && s.isRunning(){
+func (s *Server) cleanUpStart(err error) {
+	if err != nil && s.isRunning() {
 		s.Shutdown(context.Background())
 	}
 }
