@@ -45,18 +45,16 @@ jobs:
 
   lint:
     executor: goexecutor
-    environment:
-      GO11MODULE: off
     steps:
       - restore_cache:
           key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
       - checkout
       - run:
           name: "gobuild lint"
-          command: gobuild lint
+          command: GO11MODULE=off gobuild lint
       - run:
           name: "gobuild dupl"
-          command: gobuild dupl
+          command: GO11MODULE=off gobuild dupl
 
   test:
     executor: goexecutor
