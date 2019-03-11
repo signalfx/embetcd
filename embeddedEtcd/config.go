@@ -1,4 +1,4 @@
-package etcdserver
+package embeddedEtcd
 
 import (
 	"context"
@@ -7,10 +7,9 @@ import (
 
 	cli "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/embed"
-	"github.com/signalfx/embedded-etcd/etcdclient"
-	common "github.com/signalfx/embedded-etcd/etcdcommon"
 )
 
+// Config is a struct representing etcd config plus additional configurations we need for running etcd with this project
 type Config struct {
 	*embed.Config
 	ClusterName        string
@@ -23,16 +22,16 @@ type Config struct {
 }
 
 // GetClientFromConfig returns a client with the supplied context from the config
-func (c *Config) GetClientFromConfig(ctx context.Context) (*etcdclient.Client, error) {
+func (c *Config) GetClientFromConfig(ctx context.Context) (*Client, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	// create a client to the existing cluster
-	return etcdclient.New(cli.Config{
+	return NewClient(cli.Config{
 		Endpoints:        c.InitialCluster,
-		DialTimeout:      common.DurationOrDefault(c.DialTimeout, DefaultDialTimeout),
+		DialTimeout:      DurationOrDefault(c.DialTimeout, DefaultDialTimeout),
 		TLS:              &tls.Config{InsecureSkipVerify: true}, // insecure for now
-		AutoSyncInterval: common.DurationOrDefault(c.AutoSyncInterval, DefaultAutoSyncInterval),
+		AutoSyncInterval: DurationOrDefault(c.AutoSyncInterval, DefaultAutoSyncInterval),
 		Context:          ctx, // pass in the context so the temp client closes with a cancelled context
 	})
 }

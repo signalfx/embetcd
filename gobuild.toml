@@ -6,9 +6,11 @@
 
 [metalinter]
   [metalinter.vars]
-    args = ["--disable-all", "--vendor", "--min-confidence=.3", "--deadline=300s", "--exclude=.*_test.go"]
+    args = ["--disable-all", "--vendor", "--concurrency=12", "--min-confidence=.3", "--deadline=300s", "--exclude=.*_test.go"]
   [metalinter.ignored]
     coverageignored = "ignored is unused"
+    errcheck = "error return value not checked"
+    gosec = "Errors unhandled.,LOW,HIGH"
     insecureignored = "TLS InsecureSkipVerify set true"
   [metalinter.enabled]
     golint = true

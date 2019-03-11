@@ -1,21 +1,20 @@
-package etcdserver
+package embeddedEtcd
 
 import (
 	"context"
 	"fmt"
-	cli "github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/etcdserver"
-	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
-	"github.com/signalfx/embedded-etcd/etcderrors"
-	"github.com/signalfx/golib/pointer"
 	"io/ioutil"
 	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	cli "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/embed"
+	"github.com/coreos/etcd/etcdserver"
+	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/pkg/transport"
+	"github.com/signalfx/golib/pointer"
 )
 
 // helper function to get an etcd config with default values and then overwrite what we want
@@ -57,7 +56,7 @@ func testCreateEtcdDir(t *testing.T, tempDirs []string) (string, error) {
 }
 
 // starts a server using the supplied etcd cfg and timeout and returns the server and modified array of servers
-func testStartServer(t *testing.T, etcdCfg *Config, startTimeout *time.Duration, servers []*Server) (*Server, []*Server, error){
+func testStartServer(t *testing.T, etcdCfg *Config, startTimeout *time.Duration, servers []*Server) (*Server, []*Server, error) {
 	var err error
 	// create a new server
 	server := New()
@@ -79,7 +78,7 @@ func testStartServer(t *testing.T, etcdCfg *Config, startTimeout *time.Duration,
 	// if the server started correctly
 	if err == nil {
 		// cover ErrAlreadyRunning
-		if server.Start(timeout, etcdCfg) != etcderrors.ErrAlreadyRunning {
+		if server.Start(timeout, etcdCfg) != ErrAlreadyRunning {
 			t.Errorf("Already running server did not return ErrAlreadyRunning when start was invoked %v", server)
 			t.Fail()
 		}
@@ -133,188 +132,6 @@ func testTearDownDirectories(t *testing.T, dirs []string) {
 	}
 }
 
-func TestMemberHaltsAndIsReAdded(t *testing.T) {
-	type arg struct {
-		etcdCfg          *Config
-		AutoSyncInterval time.Duration
-		dialTimeout      time.Duration
-		startTimeout     *time.Duration
-		wantStartErr     bool
-	}
-
-	tests := []struct {
-		name        string
-		args        []arg
-		wantErr     bool
-		stopTimeout *time.Duration
-	}{
-		{
-			name: "ensure that etcd server cleans up cluster",
-			args: []arg{
-				{
-					etcdCfg: testNewConfigWithDefaults(
-						&Config{
-							Config: &embed.Config{
-								Name:                "test-server-1",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3580"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3580"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3579"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3579"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:3581"}},
-								ClusterState:        embed.ClusterStateFlagNew,
-							},
-							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
-							ClusterName: "standup-four-servers",
-						}),
-				},
-				{
-					etcdCfg: testNewConfigWithDefaults(
-						&Config{
-							Config: &embed.Config{
-								Name:                "test-server-2",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3680"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3680"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3679"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3679"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:3681"}},
-								ClusterState:        embed.ClusterStateFlagExisting,
-							},
-							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
-							ClusterName: "standup-four-servers",
-						}),
-				},
-				{
-					etcdCfg: testNewConfigWithDefaults(
-						&Config{
-							Config: &embed.Config{
-								Name:                "test-server-3",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3780"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3780"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3779"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3779"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:3781"}},
-								ClusterState:        embed.ClusterStateFlagExisting,
-							},
-							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
-							ClusterName:  "standup-four-servers",
-						}),
-				},
-				{
-					etcdCfg: testNewConfigWithDefaults(
-						&Config{
-							Config: &embed.Config{
-								Name:                "test-server-4",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3880"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3880"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:3879"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:3879"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:3881"}},
-								ClusterState:        embed.ClusterStateFlagExisting,
-							},
-							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
-							ClusterName: "standup-four-servers",
-						}),
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tempDirs := make([]string, 0, len(tt.args))
-			defer testTearDownDirectories(t, tempDirs)
-
-			servers := make([]*Server, 0, len(tt.args))
-			defer testTearDownCluster(t, servers)
-
-			// iterate over each server config
-			for _, a := range tt.args {
-				// create the etcd server directory
-				var err error
-				if a.etcdCfg.Dir, err = testCreateEtcdDir(t, tempDirs); err != nil {
-					t.Errorf("failed to create temporary data dir for etcd server %v", err)
-					return
-				}
-
-				// start the server
-				var server *Server
-				if server, servers, err = testStartServer(t, a.etcdCfg, a.startTimeout, servers); (err != nil) != a.wantStartErr {
-					t.Errorf("New() expected error while starting up server %v but didn't get error = %v, wantErr %v", server, err, a.wantStartErr)
-					return
-				}
-			}
-
-			t.Log("Ensuring each member is up and aware of each other..")
-			if err := testAssertConsistentClusterSize(t, servers); err != nil {
-				t.Errorf(err.Error())
-				return
-			}
-
-			// stop a server abruptly
-			t.Log("Killing server in cluster: ", servers[0].Config().Name, servers[0].Server.ID())
-			servers[0].Server.HardStop()  // hard stop does not clear the listener
-			servers[0].Close() // invoking close is what ultimately stops the etcd server from hogging the port
-
-			// remove the server from the list of servers
-			servers = servers[1:]
-
-			// ensure the cluster size is eventually consistent with some timeout
-			timeout, cancel := context.WithTimeout(context.Background(), time.Second*120)
-			defer cancel()
-			for timeout.Err() == nil {
-				members := servers[0].Server.Cluster().Members()
-				if len(members) == len(servers) {
-					for _, member := range members {
-						t.Log(member)
-					}
-					break
-				}
-				time.Sleep(5 * time.Second)
-			}
-
-			// if the timeout timed out there was an error
-			if timeout.Err() != nil {
-				t.Error(timeout.Err().Error())
-			}
-
-			t.Log("Adding the first server back to the cluster")
-			// change the cluster state in the test to existing since we're rejoining
-			tt.args[0].etcdCfg.ClusterState = embed.ClusterStateFlagExisting
-			var err error
-			if _, servers, err = testStartServer(t, tt.args[0].etcdCfg, tt.args[0].startTimeout, servers ); err != nil {
-				t.Error("Failed to add the first server back to the cluster", err)
-				return
-			}
-
-			t.Log("Ensuring each member is up and aware of each other..")
-			if err := testAssertConsistentClusterSize(t, servers); err != nil {
-				t.Errorf(err.Error())
-				return
-			}
-		})
-	}
-}
-
-
 func TestNew(t *testing.T) {
 	type arg struct {
 		etcdCfg          *Config
@@ -343,6 +160,7 @@ func TestNew(t *testing.T) {
 							},
 						}),
 					wantStartErr: true,
+					startTimeout: pointer.Duration(time.Second * 5),
 				},
 			},
 			stopTimeout: pointer.Duration(time.Second * 1),
@@ -355,18 +173,18 @@ func TestNew(t *testing.T) {
 					etcdCfg: testNewConfigWithDefaults(
 						&Config{
 							Config: &embed.Config{
-								Name:                "test1",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2480"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2480"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2470"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2470"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:2491"}},
-								ClusterState:        embed.ClusterStateFlagNew,
+								Name:              "test1",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2480"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2480"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2470"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2470"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:2491"}},
+								ClusterState:      embed.ClusterStateFlagNew,
 							},
 							ClusterName: "standup-one-server",
 						}),
@@ -382,43 +200,42 @@ func TestNew(t *testing.T) {
 					etcdCfg: testNewConfigWithDefaults(
 						&Config{
 							Config: &embed.Config{
-								Name:                "test-server-1",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2580"}, {Scheme: "http", Host: "0.0.0.0:2581"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2580"}, {Scheme: "http", Host: "127.0.0.1:2581"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2570"}, {Scheme: "http", Host: "0.0.0.0:2571"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2570"}, {Scheme: "http", Host: "127.0.0.1:2571"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:2591"}},
-								ClusterState:        embed.ClusterStateFlagNew,
+								Name:              "test-server-1",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2580"}, {Scheme: "http", Host: "0.0.0.0:2581"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2580"}, {Scheme: "http", Host: "127.0.0.1:2581"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2570"}, {Scheme: "http", Host: "0.0.0.0:2571"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2570"}, {Scheme: "http", Host: "127.0.0.1:2571"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:2591"}},
+								ClusterState:      embed.ClusterStateFlagNew,
 							},
 							InitialCluster: []string{"http://127.0.0.1:2570", "http://127.0.0.1:2571", "http://127.0.0.1:2670", "http://127.0.0.1:2671"},
-							ClusterName: "standup-two-servers",
+							ClusterName:    "standup-two-servers",
 						}),
-
 				},
 				{
 					etcdCfg: testNewConfigWithDefaults(
 						&Config{
 							Config: &embed.Config{
-								Name:                "test-server-2",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2680"}, {Scheme: "http", Host: "0.0.0.0:2681"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2680"}, {Scheme: "http", Host: "127.0.0.1:2681"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2670"}, {Scheme: "http", Host: "0.0.0.0:2671"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2670"}, {Scheme: "http", Host: "127.0.0.1:2671"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:2691"}},
-								ClusterState:        embed.ClusterStateFlagExisting,
+								Name:              "test-server-2",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2680"}, {Scheme: "http", Host: "0.0.0.0:2681"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2680"}, {Scheme: "http", Host: "127.0.0.1:2681"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2670"}, {Scheme: "http", Host: "0.0.0.0:2671"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2670"}, {Scheme: "http", Host: "127.0.0.1:2671"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:2691"}},
+								ClusterState:      embed.ClusterStateFlagExisting,
 							},
 							InitialCluster: []string{"http://127.0.0.1:2570", "http://127.0.0.1:2571", "http://127.0.0.1:2670", "http://127.0.0.1:2671"},
-							ClusterName: "standup-two-servers",
+							ClusterName:    "standup-two-servers",
 						}),
 				},
 			},
@@ -432,20 +249,20 @@ func TestNew(t *testing.T) {
 					etcdCfg: testNewConfigWithDefaults(
 						&Config{
 							Config: &embed.Config{
-								Name:                "test-server-1",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2780"}, {Scheme: "http", Host: "0.0.0.0:2781"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2780"}, {Scheme: "http", Host: "127.0.0.1:2781"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2770"}, {Scheme: "http", Host: "0.0.0.0:2771"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2770"}, {Scheme: "http", Host: "127.0.0.1:2771"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:2791"}},
-								ClusterState:        embed.ClusterStateFlagNew,
+								Name:              "test-server-1",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2780"}, {Scheme: "http", Host: "0.0.0.0:2781"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2780"}, {Scheme: "http", Host: "127.0.0.1:2781"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2770"}, {Scheme: "http", Host: "0.0.0.0:2771"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2770"}, {Scheme: "http", Host: "127.0.0.1:2771"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:2791"}},
+								ClusterState:      embed.ClusterStateFlagNew,
 							},
-							ClusterName: "standups-two-server-with-dif-names",
+							ClusterName:    "standups-two-server-with-dif-names",
 							InitialCluster: []string{"http://127.0.0.1:2770", "http://127.0.0.1:2771", "http://127.0.0.1:2880", "http://127.0.0.1:2881"},
 						}),
 				},
@@ -453,23 +270,23 @@ func TestNew(t *testing.T) {
 					etcdCfg: testNewConfigWithDefaults(
 						&Config{
 							Config: &embed.Config{
-								Name:                "test-server-2",
-								PeerAutoTLS:         false,
-								PeerTLSInfo:         transport.TLSInfo{},
-								LPUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2880"}, {Scheme: "http", Host: "0.0.0.0:2881"}},
-								APUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2880"}, {Scheme: "http", Host: "127.0.0.1:2881"}},
-								ClientAutoTLS:       false,
-								ClientTLSInfo:       transport.TLSInfo{},
-								LCUrls:              []url.URL{{Scheme: "http", Host: "0.0.0.0:2870"}, {Scheme: "http", Host: "0.0.0.0:2871"}},
-								ACUrls:              []url.URL{{Scheme: "http", Host: "127.0.0.1:2870"}, {Scheme: "http", Host: "127.0.0.1:2871"}},
-								Metrics:             "basic",
-								ListenMetricsUrls:   []url.URL{{Scheme: "http", Host: "127.0.0.1:2891"}},
-								ClusterState:        embed.ClusterStateFlagExisting,
+								Name:              "test-server-2",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2880"}, {Scheme: "http", Host: "0.0.0.0:2881"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2880"}, {Scheme: "http", Host: "127.0.0.1:2881"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:2870"}, {Scheme: "http", Host: "0.0.0.0:2871"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:2870"}, {Scheme: "http", Host: "127.0.0.1:2871"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:2891"}},
+								ClusterState:      embed.ClusterStateFlagExisting,
 							},
 							InitialCluster: []string{"http://127.0.0.1:2770", "http://127.0.0.1:2771", "http://127.0.0.1:2880", "http://127.0.0.1:2881"},
-							ClusterName: "standup-two-servers-with-dif-cluster",
+							ClusterName:    "standup-two-servers-with-dif-cluster",
 						}),
-					wantStartErr:   true,
+					wantStartErr: true,
 				},
 			},
 			stopTimeout: pointer.Duration(time.Second * 1),
@@ -518,8 +335,8 @@ func TestNew(t *testing.T) {
 							InitialCluster: []string{"http://127.0.0.1:2970", "http://127.0.0.1:3070"},
 						}),
 					// set a short timeout since this is an error case
-					startTimeout:   pointer.Duration(time.Second * 5),
-					wantStartErr:   true,
+					startTimeout: pointer.Duration(time.Second * 5),
+					wantStartErr: true,
 				},
 			},
 			stopTimeout: pointer.Duration(time.Second * 1),
@@ -635,11 +452,11 @@ func TestNew(t *testing.T) {
 								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3491"}},
 								ClusterState:      embed.ClusterStateFlagExisting,
 							},
-							InitialCluster: []string{"http://127.0.0.1:3470", "http://127.0.0.1:3470"},
+							InitialCluster: []string{"http://127.0.0.1:3470"},
 						}),
 					// set a short timeout since this is an error case
-					startTimeout:   pointer.Duration(time.Second * 30),
-					wantStartErr:   true,
+					startTimeout: pointer.Duration(time.Second * 30),
+					wantStartErr: true,
 				},
 			},
 			stopTimeout: pointer.Duration(time.Second * 1),
@@ -656,6 +473,8 @@ func TestNew(t *testing.T) {
 			// iterate over each server config
 			for _, a := range tt.args {
 
+				t.Log(a.etcdCfg.Name)
+
 				// create the etcd server directory
 				var err error
 				if a.etcdCfg.Dir, err = testCreateEtcdDir(t, tempDirs); err != nil {
@@ -664,12 +483,10 @@ func TestNew(t *testing.T) {
 				}
 
 				// start the server
-				var server *Server
-				if server, servers, err = testStartServer(t, a.etcdCfg, a.startTimeout, servers); (err != nil) != a.wantStartErr {
-					t.Errorf("New() expected error while starting up server %v but didn't get error = %v, wantErr %v", server, err, a.wantStartErr)
+				if _, servers, err = testStartServer(t, a.etcdCfg, a.startTimeout, servers); (err != nil) != a.wantStartErr {
+					t.Errorf("New() expected error while starting up server %s [%v] but didn't get error = %v, wantErr %v", a.etcdCfg.Name, a.etcdCfg.APUrls, err, a.wantStartErr)
 					return
 				}
-				t.Log(err)
 			}
 
 			t.Log("Ensuring each member is up and aware of each other..")
@@ -678,7 +495,7 @@ func TestNew(t *testing.T) {
 				return
 			}
 
-			t.Log ("Shutting down each member in the cluster")
+			t.Log("Shutting down each member in the cluster")
 			for _, server := range servers {
 				var ctx context.Context
 				var cancel context.CancelFunc
@@ -701,11 +518,279 @@ func TestNew(t *testing.T) {
 				}
 
 				// cover ErrAlreadyStopped error
-				if err := server.Shutdown(ctx); err != etcderrors.ErrAlreadyStopped {
+				if err := server.Shutdown(ctx); err != ErrAlreadyStopped {
 					t.Errorf("Already stopped server did not return ErrAlreadyStopped when stop was called: %v", server)
 				}
 
+				// cleanUpStart should just run
+				server.cleanUpStart(fmt.Errorf("bogus error"))
+
 				cancel()
+			}
+		})
+	}
+}
+
+
+func TestMemberHaltsAndIsReAdded(t *testing.T) {
+	type arg struct {
+		etcdCfg          *Config
+		AutoSyncInterval time.Duration
+		dialTimeout      time.Duration
+		startTimeout     *time.Duration
+		wantStartErr     bool
+	}
+
+	tests := []struct {
+		name        string
+		args        []arg
+		wantErr     bool
+		stopTimeout *time.Duration
+	}{
+		{
+			name: "ensure that etcd server cleans up cluster",
+			args: []arg{
+				{
+					etcdCfg: testNewConfigWithDefaults(
+						&Config{
+							Config: &embed.Config{
+								Name:              "test-server-1",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3580"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3580"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3579"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3579"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3581"}},
+								ClusterState:      embed.ClusterStateFlagNew,
+							},
+							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
+							ClusterName:    "standup-four-servers",
+						}),
+				},
+				{
+					etcdCfg: testNewConfigWithDefaults(
+						&Config{
+							Config: &embed.Config{
+								Name:              "test-server-2",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3680"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3680"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3679"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3679"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3681"}},
+								ClusterState:      embed.ClusterStateFlagExisting,
+							},
+							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
+							ClusterName:    "standup-four-servers",
+						}),
+				},
+				{
+					etcdCfg: testNewConfigWithDefaults(
+						&Config{
+							Config: &embed.Config{
+								Name:              "test-server-3",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3780"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3780"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3779"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3779"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3781"}},
+								ClusterState:      embed.ClusterStateFlagExisting,
+							},
+							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
+							ClusterName:    "standup-four-servers",
+						}),
+				},
+				{
+					etcdCfg: testNewConfigWithDefaults(
+						&Config{
+							Config: &embed.Config{
+								Name:              "test-server-4",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3880"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3880"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3879"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3879"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3881"}},
+								ClusterState:      embed.ClusterStateFlagExisting,
+							},
+							InitialCluster: []string{"http://127.0.0.1:3579", "http://127.0.0.1:3679", "http://127.0.0.1:3779", "http://127.0.0.1:3879"},
+							ClusterName:    "standup-four-servers",
+						}),
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDirs := make([]string, 0, len(tt.args))
+			defer testTearDownDirectories(t, tempDirs)
+
+			servers := make([]*Server, 0, len(tt.args))
+			defer testTearDownCluster(t, servers)
+
+			// iterate over each server config
+			for _, a := range tt.args {
+				// create the etcd server directory
+				var err error
+				if a.etcdCfg.Dir, err = testCreateEtcdDir(t, tempDirs); err != nil {
+					t.Errorf("failed to create temporary data dir for etcd server %v", err)
+					return
+				}
+
+				// start the server
+				var server *Server
+				if server, servers, err = testStartServer(t, a.etcdCfg, a.startTimeout, servers); (err != nil) != a.wantStartErr {
+					t.Errorf("New() expected error while starting up server %v but didn't get error = %v, wantErr %v", server, err, a.wantStartErr)
+					return
+				}
+			}
+
+			t.Log("Ensuring each member is up and aware of each other..")
+			if err := testAssertConsistentClusterSize(t, servers); err != nil {
+				t.Errorf(err.Error())
+				return
+			}
+
+			// stop a server abruptly
+			t.Log("Killing server in cluster: ", servers[0].Config().Name, servers[0].Server.ID())
+			servers[0].Server.HardStop() // hard stop does not clear the listener
+			servers[0].Close()           // invoking close is what ultimately stops the etcd server from hogging the port
+
+			// remove the server from the list of servers
+			servers = servers[1:]
+
+			// ensure the cluster size is eventually consistent with some timeout
+			timeout, cancel := context.WithTimeout(context.Background(), time.Second*120)
+			defer cancel()
+			for timeout.Err() == nil {
+				members := servers[0].Server.Cluster().Members()
+				if len(members) == len(servers) {
+					for _, member := range members {
+						t.Log(member)
+					}
+					break
+				}
+				time.Sleep(5 * time.Second)
+			}
+
+			// if the timeout timed out there was an error
+			if timeout.Err() != nil {
+				t.Error(timeout.Err().Error())
+			}
+
+			t.Log("Adding the first server back to the cluster")
+			// change the cluster state in the test to existing since we're rejoining
+			tt.args[0].etcdCfg.ClusterState = embed.ClusterStateFlagExisting
+			var err error
+			if _, servers, err = testStartServer(t, tt.args[0].etcdCfg, tt.args[0].startTimeout, servers); err != nil {
+				t.Error("Failed to add the first server back to the cluster", err)
+				return
+			}
+
+			t.Log("Ensuring each member is up and aware of each other..")
+			if err := testAssertConsistentClusterSize(t, servers); err != nil {
+				t.Errorf(err.Error())
+				return
+			}
+		})
+	}
+}
+
+func TestServer_cleanUpStart(t *testing.T){
+	type arg struct {
+		etcdCfg          *Config
+		AutoSyncInterval time.Duration
+		dialTimeout      time.Duration
+		startTimeout     *time.Duration
+		wantStartErr     bool
+	}
+
+	tests := []struct {
+		name        string
+		args        []arg
+		wantErr     bool
+		stopTimeout *time.Duration
+	}{
+		{
+			// ports 35XX, 35XX intentional conflict
+			name: "successfully stand up single etcd server",
+			args: []arg{
+				{
+					etcdCfg: testNewConfigWithDefaults(
+						&Config{
+							Config: &embed.Config{
+								Name:              "test1",
+								PeerAutoTLS:       false,
+								PeerTLSInfo:       transport.TLSInfo{},
+								LPUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3980"}},
+								APUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3980"}},
+								ClientAutoTLS:     false,
+								ClientTLSInfo:     transport.TLSInfo{},
+								LCUrls:            []url.URL{{Scheme: "http", Host: "0.0.0.0:3970"}},
+								ACUrls:            []url.URL{{Scheme: "http", Host: "127.0.0.1:3970"}},
+								Metrics:           "basic",
+								ListenMetricsUrls: []url.URL{{Scheme: "http", Host: "127.0.0.1:3991"}},
+								ClusterState:      embed.ClusterStateFlagNew,
+							},
+							ClusterName: "standup-one-server",
+						}),
+				},
+			},
+			stopTimeout: pointer.Duration(time.Second * 1),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tempDirs := make([]string, 0, len(tt.args))
+			defer testTearDownDirectories(t, tempDirs)
+
+			servers := make([]*Server, 0, len(tt.args))
+			defer testTearDownCluster(t, servers)
+
+			// iterate over each server config
+			for _, a := range tt.args {
+
+				t.Log(a.etcdCfg.Name)
+
+				// create the etcd server directory
+				var err error
+				if a.etcdCfg.Dir, err = testCreateEtcdDir(t, tempDirs); err != nil {
+					t.Errorf("failed to create temporary data dir for etcd server %v", err)
+					return
+				}
+
+				// start the server
+				if _, servers, err = testStartServer(t, a.etcdCfg, a.startTimeout, servers); (err != nil) != a.wantStartErr {
+					t.Errorf("New() expected error while starting up server %s [%v] but didn't get error = %v, wantErr %v", a.etcdCfg.Name, a.etcdCfg.APUrls, err, a.wantStartErr)
+					return
+				}
+			}
+
+			t.Log("Ensuring each member is up and aware of each other..")
+			if err := testAssertConsistentClusterSize(t, servers); err != nil {
+				t.Errorf(err.Error())
+				return
+			}
+			t.Log("Forcibly cleaning up the cluster")
+			for _, server := range servers {
+				server.cleanUpStart(fmt.Errorf("bogus error"))
 			}
 		})
 	}
@@ -767,7 +852,7 @@ func TestServer_waitForShutdown(t *testing.T) {
 			}
 			cancel()
 
-			if err := s.waitForShutdown(tt.args.done, tt.args.ctx); (err != nil) != tt.wantErr {
+			if err := s.waitForShutdown(tt.args.ctx, tt.args.done); (err != nil) != tt.wantErr {
 				t.Errorf("Server.waitForShutdown() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			// clean up tests
@@ -775,7 +860,6 @@ func TestServer_waitForShutdown(t *testing.T) {
 		})
 	}
 }
-
 
 func TestServer_errorHandlerRoutine(t *testing.T) {
 	closedStructCh := make(chan struct{})

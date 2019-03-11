@@ -1,4 +1,4 @@
-package etcdcommon
+package embeddedEtcd
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func Test_WaitForStructChOrErrCh(t *testing.T) {
 	type args struct {
 		readyCh <-chan struct{}
 		errCh   <-chan error
-		ctx context.Context
+		ctx     context.Context
 	}
 	tests := []struct {
 		name    string
@@ -31,7 +31,7 @@ func Test_WaitForStructChOrErrCh(t *testing.T) {
 			args: args{
 				readyCh: closedStructCh,
 				errCh:   make(chan error),
-				ctx: context.Background(),
+				ctx:     context.Background(),
 			},
 			wantErr: false,
 		},
@@ -40,7 +40,7 @@ func Test_WaitForStructChOrErrCh(t *testing.T) {
 			args: args{
 				readyCh: make(chan struct{}),
 				errCh:   ErrChWithErr,
-				ctx: context.Background(),
+				ctx:     context.Background(),
 			},
 			wantErr: true,
 		},
@@ -49,7 +49,7 @@ func Test_WaitForStructChOrErrCh(t *testing.T) {
 			args: args{
 				readyCh: make(chan struct{}),
 				errCh:   make(chan error),
-				ctx: canceledCtx,
+				ctx:     canceledCtx,
 			},
 			wantErr: true,
 		},

@@ -1,17 +1,10 @@
-package etcdclient
+package embeddedEtcd
 
 import (
 	"context"
-	"path"
-	"time"
-
 	cli "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/clientv3/concurrency"
-	common "github.com/signalfx/embedded-etcd/etcdcommon"
-)
-
-const (
-	DefaultEndpointUpdateInterval = time.Second * 15
+	"path"
 )
 
 // Client wraps around an etcd v3 client and adds some helper functions
@@ -19,37 +12,9 @@ type Client struct {
 	*cli.Client
 }
 
-// Updates the endpoints on the client periodically and can be run in a dedicated go routine.
-func (c *Client) GetClusterClientEndpoints() (endpoints []string, err error) {
-	var members *cli.MemberListResponse
-	members, err = c.MemberList(c.Ctx())
-	if err == nil && members.Members != nil {
-		for _, member := range members.Members {
-			endpoints = append(endpoints, member.GetClientURLs()...)
-		}
-	}
-	return endpoints, err
-}
-
-// UpdateEndpointRoutine updates this client's endpoints until the client closes
-func (c *Client) UpdateEndpointsRoutine(interval *time.Duration) {
-	ticker := time.NewTicker(common.DurationOrDefault(interval, DefaultEndpointUpdateInterval))
-	for {
-		select {
-		case <-c.Ctx().Done():
-			return
-		case <-ticker.C:
-			endpoints, err := c.GetClusterClientEndpoints()
-			if err == nil && len(endpoints) > 0 {
-				c.SetEndpoints(endpoints...)
-			}
-		}
-	}
-}
-
 // PutWithKeepAlive puts a key and value with a keep alive returns
 // a lease, the keep alive response channel, and an err if one occurrs
-func (c *Client) PutWithKeepAlive(ctx context.Context, key string, value string, ttl int64) (lease *cli.LeaseGrantResponse, keepAlive <-chan *cli.LeaseKeepAliveResponse, err error){
+func (c *Client) PutWithKeepAlive(ctx context.Context, key string, value string, ttl int64) (lease *cli.LeaseGrantResponse, keepAlive <-chan *cli.LeaseKeepAliveResponse, err error) {
 	// create a lease for the member key
 	if err == nil {
 		// create a new lease with a 5 second ttl
@@ -74,16 +39,14 @@ func (c *Client) Lock(ctx context.Context, name string) (unlock func(context.Con
 	var session *concurrency.Session
 	session, err = concurrency.NewSession(c.Client)
 
-	if err != nil {
-		// and return now
-		return unlock, err
+	var mutex *concurrency.Mutex
+	if err == nil {
+		// create a mutex using the session under /mutex/name
+		mutex = concurrency.NewMutex(session, path.Join("", "mutex", name))
+
+		// lock the mutex and return a function to unlock the mutex
+		err = mutex.Lock(ctx)
 	}
-
-	// create a mutex using the session under /mutex/name
-	mutex := concurrency.NewMutex(session, path.Join("", "mutex", name))
-
-	// lock the mutex and return a function to unlock the mutex
-	err = mutex.Lock(ctx)
 
 	// set unlock function
 	if err == nil {
@@ -110,7 +73,7 @@ func (c *Client) Lock(ctx context.Context, name string) (unlock func(context.Con
 }
 
 // New returns a new etcd v3client wrapped with some helper functions
-func New(cfg cli.Config) (client *Client, err error) {
+func NewClient(cfg cli.Config) (client *Client, err error) {
 	var etcdClient *cli.Client
 
 	if etcdClient, err = cli.New(cfg); err == nil {
