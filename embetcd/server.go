@@ -21,18 +21,18 @@ const (
 	// EtcdClusterNamespace is the key namespace used for this package's etcd cluster
 	EtcdClusterNamespace = "__etcd-cluster__"
 	// DefaultUnhealthyTTL is the grace period to wait before removing an unhealthy member
-	DefaultUnhealthyTTL = time.Second * 15
+	DefaultUnhealthyTTL = time.Second * 30
 	// DefaultCleanUpInterval is the interval at which to poll for the health of the cluster
-	DefaultCleanUpInterval = time.Second * 5
+	DefaultCleanUpInterval = time.Second * 30
 	// DefaultStartUpGracePeriod is the graceperiod to wait for new cluster members to startup
 	// before they're subject to health checks
-	DefaultStartUpGracePeriod = time.Second * 10
+	DefaultStartUpGracePeriod = time.Second * 30
 	// DefaultShutdownTimeout is the default time to wait for the server to shutdown cleanly
 	DefaultShutdownTimeout = time.Minute * 1
 	// DefaultDialTimeout is the default etcd dial timeout
 	DefaultDialTimeout = time.Second * 5
 	// DefaultAutoSyncInterval is the default etcd autosync interval
-	DefaultAutoSyncInterval = time.Second * 1
+	DefaultAutoSyncInterval = time.Second * 15
 )
 
 // setupClusterNamespace configures the client with the EtcdClusterNamespace prefix
