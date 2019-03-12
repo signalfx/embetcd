@@ -598,7 +598,7 @@ func (s *Server) Shutdown(ctx context.Context) (err error) {
 		close(done)
 	}()
 
-	// wait for the cluster preceding routine to signal that it shut down the server or for the shutdown
+	// wait for the preceding routine to signal that it shut down the server or for the shutdown
 	// context to expire
 	s.waitForShutdown(ctx, done)
 
