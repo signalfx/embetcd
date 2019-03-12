@@ -61,13 +61,13 @@ func ServerNameConflicts(ctx context.Context, client *Client, name string) (conf
 
 // getServerPeers returns the peer urls for the cluster formatted for the initialCluster server configuration.
 // The context that is passed in should have a configured timeout.
-func getServerPeers(ctx context.Context, c *Client, initialCluster ...string) (peers string, err error) {
-	if len(initialCluster) > 0 {
-		peers = initialCluster[0]
-	}
-
+func getServerPeers(ctx context.Context, c *Client, initialCluster string) (peers string, err error) {
 	var members *cli.MemberListResponse
+
 	for ctx.Err() == nil {
+		// initialize peers with the supplied initial cluster string
+		peers = initialCluster
+
 		// get the list of members
 		members, err = c.MemberList(ctx)
 
@@ -77,7 +77,7 @@ func getServerPeers(ctx context.Context, c *Client, initialCluster ...string) (p
 
 				// if there's at least one peer url add it to the initial cluster
 				if pURLS := member.GetPeerURLs(); len(pURLS) > 0 {
-					// the etcdCfg should already have the server's address so we can safely append ",%s=%s"
+					// peers should already have this server's address so we can safely append ",%s=%s"
 					for _, url := range member.GetPeerURLs() {
 						peers = fmt.Sprintf("%s,%s=%s", peers, member.Name, url)
 					}
@@ -345,7 +345,7 @@ func (s *Server) errorHandlerRoutine(ctx context.Context, stopCh <-chan struct{}
 	}
 }
 
-func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Client, ttl *time.Duration, cleanUpInterval *time.Duration) *Members {
+func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Client, ttl *time.Duration, cleanUpInterval *time.Duration, memberRemoveTimeout *time.Duration, gracePeriod *time.Duration) *Members {
 	if s != nil && s.Etcd != nil && s.Server != nil {
 		timeout, cancel := context.WithTimeout(ctx, DurationOrDefault(cleanUpInterval, DefaultCleanUpInterval))
 		unlock, err := client.Lock(timeout, "remove")
@@ -374,8 +374,8 @@ func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Cli
 				// fetch the health of the member in a separate go routine
 				wg.Add(1)
 				go func(m *Member) {
-					defer wg.Done()
 					m.Update(client)
+					wg.Done()
 				}(members.Get(cmember))
 			}
 
@@ -385,7 +385,7 @@ func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Cli
 		wg.Wait()
 
 		// clean up the member list
-		members.Clean(ctx, ttl, nil, nil, currentMemberIDs)
+		members.Clean(ctx, ttl, gracePeriod, memberRemoveTimeout, currentMemberIDs)
 
 		// clean up any members that exceed their ttl and ignore context deadline exceeded error
 		unlock(ctx)
@@ -394,7 +394,7 @@ func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Cli
 }
 
 // clusterCleanupRoutine iteratively checks member health and removes bad members
-func (s *Server) clusterCleanupRoutine(ctx context.Context, stopCh <-chan struct{}, ttl *time.Duration, cleanUpInterval *time.Duration, client *Client) {
+func (s *Server) clusterCleanupRoutine(ctx context.Context, stopCh <-chan struct{}, ttl *time.Duration, cleanUpInterval *time.Duration, memberRemoveTimeout *time.Duration, gracePeriod *time.Duration, client *Client) {
 	// close the client on exit
 	defer client.Close()
 
@@ -413,7 +413,7 @@ func (s *Server) clusterCleanupRoutine(ctx context.Context, stopCh <-chan struct
 		case <-stopCh:
 			return
 		case <-ticker.C:
-			members = s.cleanCluster(ctx, members, client, ttl, cleanUpInterval)
+			members = s.cleanCluster(ctx, members, client, ttl, cleanUpInterval, memberRemoveTimeout, gracePeriod)
 		}
 	}
 }
@@ -474,11 +474,13 @@ func (s *Server) initializeAdditionalServerRoutines(ctx context.Context, server 
 		}()
 
 		// routine to shutdown the cluster on error
+		// The wait group is marked done inside of this method because it has to invoke Shutdown() which is where
+		// the wait is contained.
 		go s.errorHandlerRoutine(s.routineContext, s.Server.StopNotify(), s.Err())
 
 		// routine to remove unhealthy members from the cluster
 		go func() {
-			s.clusterCleanupRoutine(s.routineContext, s.Server.StopNotify(), nil, nil, clusterCleanUpClient)
+			s.clusterCleanupRoutine(s.routineContext, s.Server.StopNotify(), cfg.UnhealthyTTL, cfg.CleanUpInterval, cfg.RemoveMemberTimeout, cfg.StartupGracePeriod, clusterCleanUpClient)
 			s.routineWg.Done()
 		}()
 	}

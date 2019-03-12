@@ -12,13 +12,14 @@ import (
 // Config is a struct representing etcd config plus additional configurations we need for running etcd with this project
 type Config struct {
 	*embed.Config
-	ClusterName        string
-	InitialCluster     []string
-	CleanUpInterval    *time.Duration
-	DialTimeout        *time.Duration
-	AutoSyncInterval   *time.Duration
-	StartupGracePeriod *time.Duration
-	UnhealthyTTL       *time.Duration
+	ClusterName         string
+	InitialCluster      []string
+	CleanUpInterval     *time.Duration
+	DialTimeout         *time.Duration
+	AutoSyncInterval    *time.Duration
+	StartupGracePeriod  *time.Duration
+	UnhealthyTTL        *time.Duration
+	RemoveMemberTimeout *time.Duration
 }
 
 // GetClientFromConfig returns a client with the supplied context from the config
