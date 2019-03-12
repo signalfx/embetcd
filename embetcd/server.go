@@ -563,7 +563,7 @@ func (s *Server) removeSelfFromCluster(ctx context.Context) (err error) {
 	return err
 }
 
-// Shutdown shuts down the server
+// Shutdown shuts down the server with a cancelable context
 func (s *Server) Shutdown(ctx context.Context) (err error) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -581,20 +581,25 @@ func (s *Server) Shutdown(ctx context.Context) (err error) {
 	err = s.removeSelfFromCluster(ctx)
 
 	// try to gracefully close the server
+
+	// done is channel that is used to signal if the following routine is complete
 	done := make(chan struct{})
 
+	// kick off a routine to close the etcd server.  This is so projects embedding this server can shutdown disgracefully
+	// if the etcd server stalls while shutting down or exceeds the shutdown context
 	go func() {
-		// close the server
+		// close the server and signals routines to stop
 		s.Close()
 
 		// wait for the running routines to stop
 		s.routineWg.Wait()
 
-		// close the done channel
+		// close the done channel signaling the main routine that the server closed
 		close(done)
 	}()
 
-	// wait for the cluster to shutdown
+	// wait for the cluster preceding routine to signal that it shut down the server or for the shutdown
+	// context to expire
 	s.waitForShutdown(ctx, done)
 
 	return err
