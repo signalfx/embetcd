@@ -399,17 +399,15 @@ func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Cli
 		for _, cmember := range currentMembers {
 
 			// wait to check health until the member is listed as started
-			if cmember.IsStarted() {
 
-				currentMemberIDs[uint64(cmember.ID)] = struct{}{}
+			currentMemberIDs[uint64(cmember.ID)] = struct{}{}
 
-				// fetch the health of the member in a separate go routine
-				wg.Add(1)
-				go func(m *Member) {
-					m.Update(client)
-					wg.Done()
-				}(members.Get(cmember))
-			}
+			// fetch the health of the member in a separate go routine
+			wg.Add(1)
+			go func(m *Member) {
+				m.Update(client)
+				wg.Done()
+			}(members.Get(cmember))
 
 		}
 
