@@ -27,7 +27,7 @@ const (
 	DefaultCleanUpInterval = time.Second * 5
 	// DefaultStartUpGracePeriod is the graceperiod to wait for new cluster members to startup
 	// before they're subject to health checks
-	DefaultStartUpGracePeriod = time.Second * 10
+	DefaultStartUpGracePeriod = time.Second * 60
 	// DefaultShutdownTimeout is the default time to wait for the server to shutdown cleanly
 	DefaultShutdownTimeout = time.Minute * 1
 	// DefaultDialTimeout is the default etcd dial timeout
@@ -114,7 +114,6 @@ func getServerPeers(ctx context.Context, c *Client, initialCluster string) (peer
 		}
 	}
 	peers = dedupPeerString(peers)
-	fmt.Println(peers)
 	return peers, err
 }
 
