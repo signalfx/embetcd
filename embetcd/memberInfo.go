@@ -81,7 +81,7 @@ func (m *Members) Get(member *membership.Member) (info *Member) {
 	// Try creating the client to the node if it doesn't exist
 	// If we get repeated errors creating the client to the member,
 	// then the member will eventually fail it's health check and be removed.
-	if info.Client == nil {
+	if info.Client == nil && member != nil && member.ClientURLs != nil {
 		info.Client, _ = NewClient(clientv3.Config{Endpoints: member.ClientURLs})
 	}
 
@@ -89,7 +89,7 @@ func (m *Members) Get(member *membership.Member) (info *Member) {
 	info.Member = member
 
 	// update the member client endpoints
-	if member != nil && member.ClientURLs != nil {
+	if info.Client != nil && member != nil && member.ClientURLs != nil {
 		info.Client.SetEndpoints(member.ClientURLs...)
 	}
 
