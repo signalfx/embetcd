@@ -67,6 +67,12 @@ jobs:
           key: goexecutor-cache-{{ .Branch }}-{{ .Revision }}
       - checkout
       - run:
+          name: "apt-get update"
+          command: apt-get update
+      - run:
+          name: "install lsof"
+          command: apt-get install lsof
+      - run:
           name: "gobuild test"
           command: gobuild test
 
