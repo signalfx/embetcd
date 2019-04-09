@@ -1,11 +1,14 @@
 package embetcd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
 	"net/url"
 	"os"
+	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
@@ -506,6 +509,8 @@ func TestNew(t *testing.T) {
 				}
 
 				// shutdown
+				t.Logf("Shutting down server %s. There are %d open file descriptors open.", server.config.Name, openFDCount(t))
+
 				if err := server.Shutdown(ctx); err != nil && err != etcdserver.ErrNotEnoughStartedMembers && err != rpctypes.ErrMemberNotEnoughStarted && err != rpctypes.ErrGRPCMemberNotEnoughStarted {
 					t.Errorf("error while closing etccd server '%s' %v", server.Config().Name, err)
 				} else {
@@ -522,9 +527,10 @@ func TestNew(t *testing.T) {
 					t.Errorf("Already stopped server did not return ErrAlreadyStopped when stop was called: %v", server)
 				}
 
+				t.Logf("Shutdown server %s. There are %d open file descriptors open.", server.config.Name, openFDCount(t))
+
 				// cleanUpStart should just run
 				server.cleanUpStart(fmt.Errorf("bogus error"))
-
 				cancel()
 			}
 		})
@@ -668,9 +674,12 @@ func TestMemberHaltsAndIsReAdded(t *testing.T) {
 			}
 
 			// stop a server abruptly
-			t.Log("Killing server in cluster: ", servers[0].Config().Name, servers[0].Server.ID())
+			t.Logf("Killing server in cluster: %s %v.  There are %d open file descriptors.", servers[0].Config().Name, servers[0].Server.ID(), openFDCount(t))
+
 			servers[0].Server.HardStop() // hard stop does not clear the listener
 			servers[0].Close()           // invoking close is what ultimately stops the etcd server from hogging the port
+
+			t.Logf("Kiled server: %s %v.  There are %d open file descriptors.", servers[0].Config().Name, servers[0].Server.ID(), openFDCount(t))
 
 			// remove the server from the list of servers
 			servers = servers[1:]
@@ -914,4 +923,26 @@ func TestConfig_GetClientFromConfig(t *testing.T) {
 	if err != cli.ErrNoAvailableEndpoints {
 		t.Errorf("Config.GetClientFromConfig() want = (%v) got = (%v)", cli.ErrNoAvailableEndpoints, err)
 	}
+}
+
+// openFDCount returns the number of open file descriptors for the running process.
+// This function is based on content from https://groups.google.com/forum/#!topic/golang-nuts/c0AnWXjzNIA
+func openFDCount(t *testing.T) (lines int) {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		// get the pid for this process
+		pid := os.Getpid()
+
+		// build the command
+		lsofCmd := fmt.Sprintf("lsof -p %v", pid)
+
+		// execute the command in a shell and get the output
+		out, err := exec.Command("/bin/sh", "-c", lsofCmd).Output()
+		if err != nil {
+			t.Errorf("a problem occurred while checking the number of open file descriptors %v", err)
+		}
+
+		// count the number of lines returned from the lsof command
+		lines = bytes.Count(out, []byte("\n"))
+	}
+	return lines
 }
