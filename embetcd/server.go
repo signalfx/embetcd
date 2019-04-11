@@ -126,17 +126,34 @@ func clusterNameConflicts(ctx context.Context, client *Client, clusterName strin
 		// then you run the risk of breaking quorum and stalling out on the cluster name check
 		resp, err = client.Get(ctx, "/name")
 		if err == nil {
-
-			if len(resp.Kvs) == 0 || string(resp.Kvs[0].Value) == "" {
-				_, _ = client.Put(ctx, "/name", clusterName)
-				return nil
-			}
-			if len(resp.Kvs) != 0 && string(resp.Kvs[0].Value) != clusterName {
+			if len(resp.Kvs) != 0 && string(resp.Kvs[0].Value) != clusterName && string(resp.Kvs[0].Value) != "" {
 				return ErrClusterNameConflict
 			}
 			break
 		}
 	}
+	return err
+}
+
+// setClusterName adds the cluster name
+func (s *Server) setClusterName(ctx context.Context, clusterName string) (err error) {
+	var tempcli *Client
+	defer CloseClient(tempcli)
+
+	for ctx.Err() == nil {
+		// s.newServerClient() creates a new etcd client that doesn't go out over the wire via grpc,
+		// but rather invokes functions directly on the server itself.  This should be fast.
+		tempcli, err = s.newServerClient()
+		if err == nil {
+			_, err = tempcli.Put(ctx, "/name", clusterName)
+
+			// break if cluster name set successfully
+			if err == nil {
+				break
+			}
+		}
+	}
+
 	return err
 }
 
@@ -331,6 +348,11 @@ func (s *Server) Start(ctx context.Context, cfg *Config) (err error) {
 		err = WaitForStructChOrErrCh(ctx, s.Etcd.Server.ReadyNotify(), s.Etcd.Err())
 	}
 
+	// set the cluster name now that the cluster has started without error
+	if err == nil && s.isRunning() {
+		s.setClusterName(ctx, cfg.ClusterName)
+	}
+
 	// initialize the routines that clean up the cluster
 	if err == nil && s.isRunning() {
 		err = s.initializeAdditionalServerRoutines(ctx, s.Etcd, cfg)
@@ -482,14 +504,6 @@ func (s *Server) initializeAdditionalServerRoutines(ctx context.Context, server 
 
 	// create cancelable context to signal for the routines to stop.  Shutdown() will cancel the context
 	s.routineContext, s.routineCancel = context.WithCancel(context.Background())
-
-	// store the member name because we've successfully started up
-	if err == nil {
-		// TODO: log this in the future when a upcoming version of etcd gives us access to the etcd logger
-		// put the cluster name will put the configured cluster name
-		// this should already have been validated by join if we're joining an existing cluster
-		_, _ = memberKeyClient.Put(ctx, "/name", cfg.ClusterName)
-	}
 
 	// Use the server client to create a key for this server/member under "__etcd-cluster__/members/<name>" with a keep alive lease
 	// this lease will expire when the server goes down indicating to the rest of the cluster that the server actually went down
