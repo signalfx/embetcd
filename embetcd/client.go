@@ -37,10 +37,39 @@ func (c *Client) PutWithKeepAlive(ctx context.Context, key string, value string,
 // Lock accepts an etcd client, context (with cancel), and name and creates a concurrent lock
 func (c *Client) Lock(ctx context.Context, name string) (unlock func(context.Context) error, err error) {
 	var session *concurrency.Session
-	session, err = concurrency.NewSession(c.Client)
-
 	var mutex *concurrency.Mutex
-	if err == nil {
+
+	// regardless of error we need to be able to unlock
+	unlock = func(ctx context.Context) (err error) {
+
+		// we need to return the first error we encounter
+		// but we need to do both operations
+		errs := make([]error, 2)
+
+		// unlock the mutex if we can
+		if mutex != nil {
+			errs[0] = mutex.Unlock(ctx)
+		}
+
+		// close the session if it's not nil
+		if session != nil {
+			errs[1] = session.Close()
+		}
+
+		// return first error
+		for _, err := range errs {
+			if err != nil {
+				return err
+			}
+		}
+
+		// return nil
+		return nil
+	}
+
+	// create a concurrency session
+	if session, err = concurrency.NewSession(c.Client); err == nil {
+
 		// create a mutex using the session under /mutex/name
 		mutex = concurrency.NewMutex(session, path.Join("", "mutex", name))
 
@@ -48,25 +77,9 @@ func (c *Client) Lock(ctx context.Context, name string) (unlock func(context.Con
 		err = mutex.Lock(ctx)
 	}
 
-	// set unlock function
-	if err == nil {
-		unlock = func(ctx context.Context) (err error) {
-			// we need to return the first error we encounter
-			// but we need to do both operations
-			errs := make([]error, 2)
-			errs[0] = mutex.Unlock(ctx)
-			errs[1] = session.Close()
-
-			// return first error
-			for _, err := range errs {
-				if err != nil {
-					return err
-				}
-			}
-
-			// return nil
-			return nil
-		}
+	// go ahead and unlock if an error occurred
+	if err != nil {
+		unlock(ctx)
 	}
 
 	return unlock, err
