@@ -383,13 +383,19 @@ func (s *Server) errorHandlerRoutine(ctx context.Context, stopCh <-chan struct{}
 	}
 }
 
-func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Client, ttl *time.Duration, cleanUpInterval *time.Duration, memberRemoveTimeout *time.Duration, gracePeriod *time.Duration) *Members {
+func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Client, ttl *time.Duration, cleanUpInterval *time.Duration, memberRemoveTimeout *time.Duration, gracePeriod *time.Duration) {
 	if s != nil && s.Etcd != nil && s.Server != nil {
 		timeout, cancel := context.WithTimeout(ctx, DurationOrDefault(cleanUpInterval, DefaultCleanUpInterval))
 		unlock, err := client.Lock(timeout, "remove")
-		cancel()
+
+		// always cancel the timeout
+		defer cancel()
+
+		// always execute unlock to cancel concurrent sessions and mutex if applicable
+		defer unlock(timeout)
+
 		if err != nil {
-			return members
+			return
 		}
 
 		// get the list of members the server is aware of
@@ -423,10 +429,8 @@ func (s *Server) cleanCluster(ctx context.Context, members *Members, client *Cli
 		// clean up the member list
 		members.Clean(ctx, ttl, gracePeriod, memberRemoveTimeout, currentMemberIDs)
 
-		// clean up any members that exceed their ttl and ignore context deadline exceeded error
-		unlock(ctx)
 	}
-	return members
+	return
 }
 
 // clusterCleanupRoutine iteratively checks member health and removes bad members
@@ -449,7 +453,7 @@ func (s *Server) clusterCleanupRoutine(ctx context.Context, stopCh <-chan struct
 		case <-stopCh:
 			return
 		case <-ticker.C:
-			members = s.cleanCluster(ctx, members, client, ttl, cleanUpInterval, memberRemoveTimeout, gracePeriod)
+			s.cleanCluster(ctx, members, client, ttl, cleanUpInterval, memberRemoveTimeout, gracePeriod)
 		}
 	}
 }
@@ -595,15 +599,22 @@ func (s *Server) removeSelfFromCluster(ctx context.Context) (err error) {
 
 			// use the temporary client to try removing ourselves from the cluster
 			var unlock func(context.Context) error
-			if unlock, err = tempcli.Lock(timeout, s.Server.Cfg.Name); err == nil {
+			if unlock, err = tempcli.Lock(timeout, "remove"); err == nil {
 				_, err = tempcli.MemberRemove(ctx, uint64(s.Server.ID()))
+			}
+
+			// regardless give up the lock
+			if unlock != nil {
 				unlock(timeout)
-				// mask the member not found err because it could mean a cluster clean up routine cleaned us up already
-				if err == nil || err == rpctypes.ErrMemberNotFound {
-					err = nil
-					cancel()
-					break
-				}
+			}
+
+			// regardless cancel the timeout context for the lock
+			cancel()
+
+			// mask the member not found err because it could mean a cluster clean up routine cleaned us up already
+			if err == nil || err == rpctypes.ErrMemberNotFound {
+				err = nil
+				break
 			}
 
 			// wait for the timeout to try again
