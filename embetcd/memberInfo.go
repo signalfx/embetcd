@@ -78,19 +78,19 @@ func (m *Members) Get(member *membership.Member) (info *Member) {
 		m.members[uint64(member.ID)] = info
 	}
 
-	// Try creating the client to the node if it doesn't exist
-	// If we get repeated errors creating the client to the member,
-	// then the member will eventually fail it's health check and be removed.
-	if info.Client == nil && member != nil && member.ClientURLs != nil {
-		info.Client, _ = NewClient(clientv3.Config{Endpoints: member.ClientURLs})
-	}
-
 	// update the info with the incoming membership
 	info.Member = member
 
+	// Try creating the client to the node if it doesn't exist
+	// If we get repeated errors creating the client to the member,
+	// then the member will eventually fail it's health check and be removed.
+	if info.Client == nil && info.Member != nil && info.ClientURLs != nil {
+		info.Client, _ = NewClient(clientv3.Config{Endpoints: member.ClientURLs})
+	}
+
 	// update the member client endpoints
-	if info.Client != nil && member != nil && member.ClientURLs != nil {
-		info.Client.SetEndpoints(member.ClientURLs...)
+	if info.Client != nil && info.Member != nil && info.ClientURLs != nil {
+		info.Client.SetEndpoints(info.ClientURLs...)
 	}
 
 	return info
