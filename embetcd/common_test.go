@@ -3,10 +3,11 @@ package embetcd
 import (
 	"context"
 	"fmt"
-	"github.com/signalfx/golib/pointer"
 	"net/url"
 	"testing"
 	"time"
+
+	"github.com/signalfx/golib/pointer"
 )
 
 func Test_WaitForStructChOrErrCh(t *testing.T) {
@@ -102,5 +103,35 @@ func Test_URLToSTringSlice(t *testing.T) {
 	urls := URLSToStringSlice([]url.URL{{Scheme: "http", Host: "test1:8080"}})
 	if len(urls) < 1 || urls[0] != "http://test1:8080" {
 		t.Errorf("expected 'http://test1:8080', but got %v", urls)
+	}
+}
+
+func TestCancelContext(t *testing.T) {
+	type args struct {
+		cancel context.CancelFunc
+	}
+
+	_, nonNil := context.WithCancel(context.Background())
+
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "nil cancel",
+			args: args{},
+		},
+		{
+			name: "non-nil cancel",
+			args: args{
+				cancel: nonNil,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			CancelContext(tt.args.cancel)
+		})
 	}
 }

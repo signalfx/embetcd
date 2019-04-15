@@ -17,6 +17,7 @@ import (
 	"github.com/coreos/etcd/etcdserver"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/pkg/transport"
+	"github.com/coreos/etcd/pkg/types"
 	"github.com/signalfx/golib/pointer"
 )
 
@@ -869,7 +870,7 @@ func TestServer_waitForShutdown(t *testing.T) {
 	}
 }
 
-func TestServer_errorHandlerRoutine(t *testing.T) {
+func TestServer_waitForCtxErrOrServerStop(t *testing.T) {
 	closedStructCh := make(chan struct{})
 	close(closedStructCh)
 	closedErrCh := make(chan error)
@@ -909,9 +910,9 @@ func TestServer_errorHandlerRoutine(t *testing.T) {
 			s.routineContext, s.routineCancel = context.WithCancel(context.Background())
 			s.routineWg.Add(1)
 
-			s.errorHandlerRoutine(s.routineContext, tt.args.stopCh, tt.args.errCh)
+			waitForCtxErrOrServerStop(s.routineContext, tt.args.stopCh, tt.args.errCh)
 			if s.IsRunning() {
-				t.Errorf("Server.errorHandlerRoutine() did not shutdownt he server")
+				t.Errorf("Server.waitForCtxErrOrServerStop() did not shutdownt he server")
 			}
 		})
 	}
@@ -945,4 +946,201 @@ func openFDCount(t *testing.T) (lines int) {
 		lines = bytes.Count(out, []byte("\n"))
 	}
 	return lines
+}
+
+func Test_removeCacheMembersThatAreNotCurrent(t *testing.T) {
+	type args struct {
+		cache            map[types.ID]*memberHealth
+		currentMemberMap map[types.ID]struct{}
+		idToRemove       types.ID
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "ensure that removeCacheMembersThatAreNotCurrent does what it says",
+			args: args{
+				map[types.ID]*memberHealth{5: {}, 6: {}},
+				map[types.ID]struct{}{6: {}},
+				5,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			removeCacheMembersThatAreNotCurrent(tt.args.cache, tt.args.currentMemberMap)
+			if _, ok := tt.args.cache[tt.args.idToRemove]; ok {
+				t.Errorf("id %d should have been removed from the cache: %v", uint64(tt.args.idToRemove), tt.args.cache)
+			}
+		})
+	}
+}
+
+func Test_printIfErr(t *testing.T) {
+	type args struct {
+		msg string
+		err error
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "verify that print if err returns true when an error is passed in",
+			args: args{
+				msg: "hello world",
+				err: fmt.Errorf("this is an error"),
+			},
+			want: true,
+		},
+		{
+			name: "verify that printIfErr returns false if no error is passed in ",
+			args: args{
+				msg: "hello world",
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := printIfErr(tt.args.msg, tt.args.err); got != tt.want {
+				t.Errorf("printIfErr() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getRemainingTime(t *testing.T) {
+	type args struct {
+		start    time.Time
+		interval time.Duration
+	}
+	tests := []struct {
+		name              string
+		args              args
+		wantRemainingTime func(time.Duration) bool
+	}{
+		{
+			name: "ensure that if there's no time remaining we get 0",
+			args: args{
+				start:    time.Now(),
+				interval: 0,
+			},
+			wantRemainingTime: func(t time.Duration) bool {
+				if t == 0 {
+					return true
+				}
+				return false
+			},
+		},
+		{
+			name: "ensure that if there's time remaining we get an appropriate duration",
+			args: args{
+				start:    time.Now(),
+				interval: 5 * time.Hour,
+			},
+			wantRemainingTime: func(t time.Duration) bool {
+				if t > 0 && t.Nanoseconds() != (5*time.Hour).Nanoseconds() {
+					return true
+				}
+				return false
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRemainingTime := getRemainingTime(tt.args.start, tt.args.interval)
+			if successful := tt.wantRemainingTime(gotRemainingTime); !successful {
+				t.Errorf("getRemainingTime() = %v, want %v", gotRemainingTime, successful)
+			}
+		})
+	}
+}
+
+func Test_shutdownServerIfErr(t *testing.T) {
+	type args struct {
+		s   *Server
+		err error
+	}
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "ensure that on error we shutdown a cluster",
+			args: args{
+				s:   &Server{config: NewConfig()},
+				err: fmt.Errorf("hello world"),
+			},
+			want: true,
+		},
+		{
+			name: "ensure that we shutdown a cluster if the error is nil",
+			args: args{
+				s: &Server{config: NewConfig()},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shutdownServerIfErr(tt.args.s, tt.args.err); got != tt.want {
+				t.Errorf("shutdownServerIfErr() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_shouldKeepLeaseAlive(t *testing.T) {
+	type args struct {
+		ctx        context.Context
+		watchCh    cli.WatchChan
+		stopNotify <-chan struct{}
+		errCh      <-chan error
+	}
+
+	closeWatchCh := make(chan cli.WatchResponse)
+	close(closeWatchCh)
+	watchCh := cli.WatchChan(closeWatchCh)
+
+	closeErrCh := make(chan error)
+	close(closeErrCh)
+
+	tests := []struct {
+		name string
+		args args
+		want bool
+	}{
+		{
+			name: "test watch ch returns true",
+			args: args{
+				ctx:        context.Background(),
+				watchCh:    watchCh,
+				stopNotify: make(chan struct{}),
+				errCh:      make(chan error),
+			},
+			want: true,
+		},
+		{
+			name: "test err ch returns false",
+			args: args{
+				ctx:        context.Background(),
+				watchCh:    make(cli.WatchChan),
+				stopNotify: make(chan struct{}),
+				errCh:      closeErrCh,
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldKeepLeaseAlive(tt.args.ctx, tt.args.watchCh, tt.args.stopNotify, tt.args.errCh); got != tt.want {
+				t.Errorf("shouldKeepLeaseAlive() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }
