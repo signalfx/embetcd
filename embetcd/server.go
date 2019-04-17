@@ -122,10 +122,8 @@ func (s *Server) setClusterName(ctx context.Context, clusterName string) (err er
 	for ctx.Err() == nil && errNilOrNotServerStopped(err) {
 		CloseClient(tempcli)
 
-		tempcli, err = s.newServerClient()
-		if err == nil {
-			_, err = tempcli.Put(ctx, "name", clusterName)
-		}
+		tempcli = s.newServerClient()
+		_, err = tempcli.Put(ctx, "name", clusterName)
 
 		// break if cluster name set successfully
 		if err == nil {
@@ -507,8 +505,9 @@ func (s *Server) clusterCleanupRoutine(ctx context.Context, stopCh <-chan struct
 }
 
 // newServerClient returns a new client for the server with the server prefix
-func (s *Server) newServerClient() (client *Client, err error) {
-
+// this function is not thread safe and must be called on the same routine as the server
+// the returned clients are threadsafe
+func (s *Server) newServerClient() (client *Client) {
 	// v3client.New() creates a new v3client that doesn't go out over grpc,
 	// but rather goes directly through the server itself.  This should be fast!
 	client = &Client{Client: v3client.New(s.Etcd.Server)}
@@ -516,7 +515,7 @@ func (s *Server) newServerClient() (client *Client, err error) {
 	// this package reserves a key namespace defined by the constant
 	setupClusterNamespace(client)
 
-	return client, err
+	return client
 }
 
 // initializeAdditionalServerRoutines launches routines for managing the etcd server
@@ -530,20 +529,17 @@ func (s *Server) initializeAdditionalServerRoutines(ctx context.Context, server 
 		s.routineWg.Add(3)
 
 		// routine to handle keeping the member key alive in the cluster
-		go func() {
+		go func(client *Client) {
 			defer s.routineWg.Done()
-
-			var client *Client
 			defer CloseClient(client)
 
-			client, err = s.newServerClient()
-			printIfErr("embetcd: failed created client for memberKeyRoutine", err)
-			s.memberKeyRoutine(s.routineContext, client, server.Server.StopNotify(), s.Err())
-		}()
+			s.memberKeyRoutine(s.routineContext, client, s.Server.StopNotify(), s.Err())
+		}(s.newServerClient())
 
 		// routine to watch for errors from etcd and shutdown
 		go func() {
 			err := waitForCtxErrOrServerStop(s.routineContext, s.Server.StopNotify(), s.Err())
+			printIfErr("embetcd: error routine returned an error", err)
 
 			// in error conditions we have to mark the routine as done because shutdown checks the routineWg
 			s.routineWg.Done()
@@ -553,16 +549,12 @@ func (s *Server) initializeAdditionalServerRoutines(ctx context.Context, server 
 		}()
 
 		// routine to remove unhealthy members from the cluster
-		go func() {
+		go func(client *Client) {
 			defer s.routineWg.Done()
-
-			var client *Client
 			defer CloseClient(client)
 
-			client, err = s.newServerClient()
-			printIfErr("embetcd failed creating client for clusterCleanUpRoutine", err)
 			s.clusterCleanupRoutine(s.routineContext, s.Server.StopNotify(), cfg.UnhealthyTTL, cfg.CleanUpInterval, cfg.StartupGracePeriod, client)
-		}()
+		}(s.newServerClient())
 	}
 
 	return err
