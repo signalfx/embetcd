@@ -1,4 +1,4 @@
-module github.com/signalfx/embedded-etcd
+module github.com/signalfx/embetcd
 
 require (
 	4d63.com/gochecknoglobals v0.0.0-20190306162314-7c3491d2b6ec // indirect
