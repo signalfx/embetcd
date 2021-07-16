@@ -6,8 +6,6 @@ import (
 	"net/url"
 	"testing"
 	"time"
-
-	"github.com/signalfx/golib/pointer"
 )
 
 func Test_WaitForStructChOrErrCh(t *testing.T) {
@@ -84,7 +82,7 @@ func Test_duration(t *testing.T) {
 		{
 			name: "expect default to be returned when incoming value is nil",
 			args: args{
-				in:  pointer.Duration(time.Second * 1),
+				in:  pointerDuration(time.Second * 1),
 				def: time.Second * 5,
 			},
 			want: time.Second * 1,

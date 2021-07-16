@@ -18,7 +18,6 @@ import (
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/pkg/transport"
 	"github.com/coreos/etcd/pkg/types"
-	"github.com/signalfx/golib/pointer"
 )
 
 // helper function to get an etcd config with default values and then overwrite what we want
@@ -164,10 +163,10 @@ func TestNew(t *testing.T) {
 							},
 						}),
 					wantStartErr: true,
-					startTimeout: pointer.Duration(time.Second * 5),
+					startTimeout: pointerDuration(time.Second * 5),
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 1),
+			stopTimeout: pointerDuration(time.Second * 1),
 		},
 		{
 			// ports 24XX
@@ -194,7 +193,7 @@ func TestNew(t *testing.T) {
 						}),
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 1),
+			stopTimeout: pointerDuration(time.Second * 1),
 		},
 		{
 			// ports 25XX, 26XX
@@ -243,7 +242,7 @@ func TestNew(t *testing.T) {
 						}),
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 30),
+			stopTimeout: pointerDuration(time.Second * 30),
 		},
 		{
 			// ports 27XX, 28XX
@@ -293,7 +292,7 @@ func TestNew(t *testing.T) {
 					wantStartErr: true,
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 1),
+			stopTimeout: pointerDuration(time.Second * 1),
 		},
 		{
 			// ports 29XX, 30XX
@@ -339,11 +338,11 @@ func TestNew(t *testing.T) {
 							InitialCluster: []string{"http://127.0.0.1:2970", "http://127.0.0.1:3070"},
 						}),
 					// set a short timeout since this is an error case
-					startTimeout: pointer.Duration(time.Second * 5),
+					startTimeout: pointerDuration(time.Second * 5),
 					wantStartErr: true,
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 1),
+			stopTimeout: pointerDuration(time.Second * 1),
 		},
 		{
 			// ports 31XX, 32XX, 33XX
@@ -413,7 +412,7 @@ func TestNew(t *testing.T) {
 						}),
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 30),
+			stopTimeout: pointerDuration(time.Second * 30),
 		},
 		{
 			// ports 34XX, 34XX intentional conflict
@@ -459,11 +458,11 @@ func TestNew(t *testing.T) {
 							InitialCluster: []string{"http://127.0.0.1:3470"},
 						}),
 					// set a short timeout since this is an error case
-					startTimeout: pointer.Duration(time.Second * 30),
+					startTimeout: pointerDuration(time.Second * 30),
 					wantStartErr: true,
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 1),
+			stopTimeout: pointerDuration(time.Second * 1),
 		},
 	}
 	for _, tt := range tests {
@@ -762,7 +761,7 @@ func TestServer_cleanUpStart(t *testing.T) {
 						}),
 				},
 			},
-			stopTimeout: pointer.Duration(time.Second * 1),
+			stopTimeout: pointerDuration(time.Second * 1),
 		},
 	}
 	for _, tt := range tests {
@@ -1143,4 +1142,9 @@ func Test_shouldKeepLeaseAlive(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pointerDuration returns a pointer to a time.Duration
+func pointerDuration(d time.Duration) *time.Duration {
+	return &d
 }
